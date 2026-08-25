@@ -1,40 +1,25 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+# Ajusta tus importaciones de base de datos según tu estructura (ej. app.database, app.models)
+from app.database import get_db 
+from app.models import Clinic 
 
-from app.database import engine, Base, get_db
-from app import schemas, crud
+app = FastAPI()
 
-# Auto-create Postgres tables
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI(title="CareCal API")
-
-# Allow Next.js on Vercel to access Python endpoints
+# 1. Habilitar CORS para permitir peticiones desde Vercel
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # En producción puedes especificar: ["https://carecal-kappa.vercel.app"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-def health_check():
-    return {"status": "ok", "service": "CareCal FastAPI Backend"}
-
-@app.get("/api/sheets")
-def check_slug(slug: str, db: Session = Depends(get_db)):
-    clinic = crud.get_clinic_by_slug(db, slug=slug)
+# 2. Endpoint para verificar disponibilidad del slug
+@app.get("/clinics/check-slug")
+def check_slug(slug: string, db: Session = Depends(get_db)):
+    clinic = db.query(Clinic).filter(Clinic.slug == slug).first()
     if clinic:
         return {"available": False}
     return {"available": True}
-
-@app.post("/api/sheets")
-def create_new_clinic(payload: schemas.NewClinicPayload, db: Session = Depends(get_db)):
-    existing = crud.get_clinic_by_slug(db, slug=payload.slug)
-    if existing:
-        raise HTTPException(status_code=400, detail="slug_taken")
-    
-    crud.create_clinic(db, payload)
-    return {"success": True}
