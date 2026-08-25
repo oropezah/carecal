@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -5,9 +6,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import crud, schemas
 
+# Configurar logs para Render
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-# 1. Habilitar CORS
+# Configuración abierta de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,23 +21,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Root de prueba
 @app.get("/")
 def read_root():
     return {"status": "ok", "service": "CareCal API"}
 
-# 2. Endpoint para verificar disponibilidad del slug (Sustituido string -> str)
 @app.get("/clinics/check-slug")
 def check_slug(slug: str, db: Session = Depends(get_db)):
-    clinic = crud.get_clinic_by_slug(db, slug=slug)
-    if clinic:
-        return {"available": False}
-    return {"available": True}
+    try:
+        clinic = crud.get_clinic_by_slug(db, slug=slug)
+        if clinic:
+            return {"available": False}
+        return {"available": True}
+    except Exception as e:
+        logger.error(f"Error consultando el slug '{slug}': {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en base de datos: {str(e)}"
+        )
 
-# 3. Endpoint para guardar la clínica completa desde create.tsx
 @app.post("/clinics", status_code=status.HTTP_201_CREATED)
 def create_new_clinic(payload: schemas.NewClinicPayload, db: Session = Depends(get_db)):
-    # Verificar si el slug ya existe antes de insertar
     existing = crud.get_clinic_by_slug(db, slug=payload.slug)
     if existing:
         raise HTTPException(
