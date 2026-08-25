@@ -1,10 +1,4 @@
 import { useState, useRef } from "react";
-import {
-  checkSlugAvailable,
-  createClinic,
-  slugify,
-  NewClinicPayload,
-} from "@/lib/sheets";
 import { C, FONT_DISPLAY, FONT_BODY, EASE_OUT } from "@/lib/carecalTheme";
 import CareCalGlassStyles from "@/components/CareCalGlassStyles";
 import SimpleAuthGuard from "@/components/SimpleAuthGuard";
@@ -23,6 +17,82 @@ import {
   type DoctorForm,
 } from "@/components/DoctorEditor";
 
+// Base URL de Render
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://carecal-u2gu.onrender.com";
+
+// Tipos requeridos para la integración con FastAPI
+export type SchedulePayload = {
+  dia_semana: string;
+  hora_inicio: string;
+  hora_fin: string;
+  duracion_slot: number;
+};
+
+export type DoctorPayload = {
+  doctor_id: string;
+  nombre_doctor: string;
+  procedimientos: string;
+  schedules: SchedulePayload[];
+};
+
+export type NewClinicPayload = {
+  slug: string;
+  nombre_clinica: string;
+  plan: "single" | "multi";
+  telefono_contacto: string;
+  email_contacto?: string;
+  doctors: DoctorPayload[];
+};
+
+export type CreateClinicResult = { success: boolean; error?: string };
+
+// Helper de slugify
+export function slugify(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Petición HTTP al backend para chequear la disponibilidad del Slug
+async function checkSlugAvailable(slug: string): Promise<boolean> {
+  if (!slug || slug.length < 3) return false;
+  try {
+    const res = await fetch(`${API_BASE}/clinics/check-slug?slug=${encodeURIComponent(slug)}`);
+    if (!res.ok) return false;
+    const data = (await res.json()) as { available: boolean };
+    return data.available;
+  } catch (error) {
+    console.error("Error validando el slug con Render:", error);
+    return false;
+  }
+}
+
+// Petición HTTP al backend para registrar la clínica en Neon
+async function createClinic(payload: NewClinicPayload): Promise<CreateClinicResult> {
+  try {
+    const res = await fetch(`${API_BASE}/clinics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 409) {
+      return { success: false, error: "slug_taken" };
+    }
+    if (!res.ok) {
+      return { success: false, error: "Failed to create clinic" };
+    }
+    return { success: true };
+  } catch (err) {
+    console.error("Error enviando el registro a FastAPI:", err);
+    return { success: false, error: "Failed to create clinic" };
+  }
+}
+
 const WHATSAPP_NUMBER = "584226337515";
 const STEPS = ["Practice", "Plan", "Providers", "Review"];
 
@@ -39,9 +109,7 @@ function CreateWizard() {
   const [step, setStep] = useState(0);
   const [nombreClinica, setNombreClinica] = useState("");
   const [slug, setSlug] = useState("");
-  const [slugStatus, setSlugStatus] = useState<
-    "idle" | "checking" | "ok" | "taken"
-  >("idle");
+  const [slugStatus, setSlugStatus] = useState<"idle" | "checking" | "ok" | "taken">("idle");
   const [plan, setPlan] = useState<"single" | "multi" | null>(null);
   const [telefonoContacto, setTelefonoContacto] = useState("");
   const [telTouched, setTelTouched] = useState(false);
@@ -83,9 +151,7 @@ function CreateWizard() {
   function handlePlanSelect(p: "single" | "multi") {
     setPlan(p);
     const n = p === "single" ? 1 : 2;
-    setDoctores(
-      Array.from({ length: n }, (_, i) => nuevoDoctor(`doc${i + 1}`)),
-    );
+    setDoctores(Array.from({ length: n }, (_, i) => nuevoDoctor(`doc${i + 1}`)));
   }
 
   function addDoctor() {
@@ -118,15 +184,14 @@ function CreateWizard() {
   function removeProcedimiento(docIndex: number, procId: string) {
     const copy = [...doctores];
     copy[docIndex].procedimientos = copy[docIndex].procedimientos.filter(
-      (p) => p.id !== procId,
+      (p) => p.id !== procId
     );
     setDoctores(copy);
   }
 
   function toggleDia(docIndex: number, diaIndex: number) {
     const copy = [...doctores];
-    copy[docIndex].dias[diaIndex].enabled =
-      !copy[docIndex].dias[diaIndex].enabled;
+    copy[docIndex].dias[diaIndex].enabled = !copy[docIndex].dias[diaIndex].enabled;
     setDoctores(copy);
   }
 
@@ -134,7 +199,7 @@ function CreateWizard() {
     docIndex: number,
     diaIndex: number,
     field: "inicio" | "fin",
-    value: string,
+    value: string
   ) {
     const copy = [...doctores];
     copy[docIndex].dias[diaIndex][field] = value;
@@ -145,7 +210,7 @@ function CreateWizard() {
     const copy = [...doctores];
     const fuente = copy[docIndex].dias[diaIndex];
     copy[docIndex].dias = copy[docIndex].dias.map((d) =>
-      d.enabled ? { ...d, inicio: fuente.inicio, fin: fuente.fin } : d,
+      d.enabled ? { ...d, inicio: fuente.inicio, fin: fuente.fin } : d
     );
     setDoctores(copy);
   }
@@ -155,7 +220,6 @@ function CreateWizard() {
     setSubmitError(null);
 
     const payload: NewClinicPayload = {
-      action: "create_clinic",
       slug,
       nombre_clinica: nombreClinica,
       plan: plan!,
@@ -185,7 +249,7 @@ function CreateWizard() {
       setSubmitError(
         result.error === "slug_taken"
           ? "That booking link is already in use. Please choose a different practice name."
-          : "We couldn't save your practice. Please try again or contact us on WhatsApp.",
+          : "We couldn't save your practice. Please try again or contact us on WhatsApp."
       );
       return;
     }
@@ -331,7 +395,7 @@ function CreateWizard() {
                       <span style={{ color: C.textMuted }}>checking…</span>
                     )}
                     {slugStatus === "ok" && (
-                    <span style={{ color: C.success }}> available</span>
+                      <span style={{ color: C.success }}> available</span>
                     )}
                     {slugStatus === "taken" && (
                       <span style={{ color: C.error }}> already taken</span>
@@ -527,7 +591,8 @@ function CreateWizard() {
                   </p>
                 </div>
 
-                {doctores.map((d) => {                 const diasActivos = d.dias.filter((day) => day.enabled);
+                {doctores.map((d) => {
+                  const diasActivos = d.dias.filter((day) => day.enabled);
                   return (
                     <div
                       key={d.doctor_id}
@@ -569,7 +634,7 @@ function CreateWizard() {
                         )}
                         {diasActivos.map((day) => (
                           <p key={day.day} className="text-xs" style={{ color: C.textSecondary }}>
-                           <span style={{ color: C.textMuted }}>{day.day}:</span>{" "}
+                            <span style={{ color: C.textMuted }}>{day.day}:</span>{" "}
                             {labelDeHora(day.inicio)} – {labelDeHora(day.fin)}
                           </p>
                         ))}
@@ -594,7 +659,7 @@ function CreateWizard() {
                   className="w-full rounded-xl py-3 text-sm"
                   style={{ color: C.textMuted, fontStyle: "italic" }}
                 >
-                ck
+                  Back
                 </button>
               </div>
             </div>
