@@ -10,7 +10,7 @@ def create_clinic(db: Session, payload: schemas.NewClinicPayload):
         nombre_clinica=payload.nombre_clinica,
         plan=payload.plan,
         telefono_contacto=payload.telefono_contacto,
-        email_contacto=payload.email_contacto,
+        email=payload.email_contacto,
     )
     db.add(db_clinic)
     db.commit()
@@ -18,7 +18,7 @@ def create_clinic(db: Session, payload: schemas.NewClinicPayload):
 
     for doc in payload.doctors:
         db_doc = models.Doctor(
-            clinic_id=db_clinic.id,
+            clinic_slug=db_clinic.slug,
             doctor_id=doc.doctor_id,
             nombre_doctor=doc.nombre_doctor,
             procedimientos=doc.procedimientos,
@@ -29,7 +29,7 @@ def create_clinic(db: Session, payload: schemas.NewClinicPayload):
 
         for sched in doc.schedules:
             db_sched = models.Schedule(
-                doctor_id=db_doc.id,
+                doctor_id=doc.doctor_id,
                 dia_semana=sched.dia_semana,
                 hora_inicio=sched.hora_inicio,
                 hora_fin=sched.hora_fin,
