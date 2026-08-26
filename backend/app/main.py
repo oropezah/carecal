@@ -1,50 +1,38 @@
-import logging
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+import os
+from pathlib import Path
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
 
-from app.database import get_db
-from app import crud, schemas
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Configurar logs para Render
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Carga .env local si existe (para desarrollo local)
+dotenv_path = BASE_DIR / ".env.local"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path=dotenv_path)
 
-app = FastAPI()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Configuración abierta de CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL no está configurada en las Environment Variables.")
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "service": "CareCal API"}
+# Compatibilidad de protocolo para SQLAlchemy 2.0+
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-@app.get("/clinics/check-slug")
-def check_slug(slug: str, db: Session = Depends(get_db)):
+# Asegurar query param de SSL para Neon Postgres
+if "sslmode=" not in DATABASE_URL:
+    separator = "&" if "?" in DATABASE_URL else "?"
+    DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
     try:
-        clinic = crud.get_clinic_by_slug(db, slug=slug)
-        if clinic:
-            return {"available": False}
-        return {"available": True}
-    except Exception as e:
-        logger.error(f"Error consultando el slug '{slug}': {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error en base de datos: {str(e)}"
-        )
-
-@app.post("/clinics", status_code=status.HTTP_201_CREATED)
-def create_new_clinic(payload: schemas.NewClinicPayload, db: Session = Depends(get_db)):
-    existing = crud.get_clinic_by_slug(db, slug=payload.slug)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Slug already taken"
-        )
-    return crud.create_clinic(db=db, payload=payload)
+        yield db
+    finally:
+        db.close()

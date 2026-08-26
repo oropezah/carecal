@@ -14,7 +14,6 @@ class DoctorCreate(BaseModel):
     schedules: List[ScheduleCreate]
 
 class NewClinicPayload(BaseModel):
-    action: str
     slug: str
     nombre_clinica: str
     plan: str
