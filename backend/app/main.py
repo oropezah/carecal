@@ -39,6 +39,16 @@ def check_slug(slug: str, db: Session = Depends(get_db)):
             detail=f"Error en base de datos: {str(e)}"
         )
 
+@app.get("/clinics/{slug}", response_model=schemas.ClinicPublic)
+def get_clinic(slug: str, db: Session = Depends(get_db)):
+    clinic = crud.get_clinic_full(db, slug=slug)
+    if not clinic:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clinic not found"
+        )
+    return clinic
+
 @app.post("/clinics", status_code=status.HTTP_201_CREATED)
 def create_new_clinic(payload: schemas.NewClinicPayload, db: Session = Depends(get_db)):
     existing = crud.get_clinic_by_slug(db, slug=payload.slug)
